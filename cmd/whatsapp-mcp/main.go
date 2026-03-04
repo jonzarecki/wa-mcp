@@ -59,9 +59,11 @@ func main() {
 	messageService := service.NewMessageService(db, waclient)
 
 	srv := server.NewMCPServer(
-		"whatsapp",
+		"wa-mcp",
 		"1.0.0",
 		server.WithToolCapabilities(true),
+		server.WithPromptCapabilities(true),
+		server.WithResourceCapabilities(true, false),
 	)
 
 	srv.AddTool(mcp.NewTool(
@@ -435,6 +437,139 @@ func main() {
 			"messages_read": count,
 			"chat_jid":      chatJID,
 		})
+	})
+
+	// --- MCP Prompts ---
+
+	srv.AddPrompt(mcp.NewPrompt("digest_group",
+		mcp.WithPromptDescription("Get a digest of recent activity in a WhatsApp group, then optionally mark as read"),
+		mcp.WithArgument("group_name",
+			mcp.ArgumentDescription("Name of the group to digest"),
+			mcp.RequiredArgument(),
+		),
+	), func(ctx context.Context, req mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+		name := req.Params.Arguments["group_name"]
+		return mcp.NewGetPromptResult(
+			"Digest group: "+name,
+			[]mcp.PromptMessage{mcp.NewPromptMessage(mcp.RoleUser, mcp.NewTextContent(
+				"Get a digest of the WhatsApp group \""+name+"\".\n\n"+
+					"Steps:\n"+
+					"1. Use list_chats with query=\""+name+"\" and groups_only=true to find the group JID\n"+
+					"2. Use list_messages with the group JID and timeframe=\"today\" (or this_week for more context)\n"+
+					"3. Summarize: key topics discussed, decisions made, questions asked, action items\n"+
+					"4. Ask me if I want to mark these messages as read using mark_as_read"))},
+		), nil
+	})
+
+	srv.AddPrompt(mcp.NewPrompt("catch_up_person",
+		mcp.WithPromptDescription("Find everything a person said recently across all WhatsApp chats"),
+		mcp.WithArgument("person_name",
+			mcp.ArgumentDescription("Name of the person to catch up on"),
+			mcp.RequiredArgument(),
+		),
+	), func(ctx context.Context, req mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+		name := req.Params.Arguments["person_name"]
+		return mcp.NewGetPromptResult(
+			"Catch up on: "+name,
+			[]mcp.PromptMessage{mcp.NewPromptMessage(mcp.RoleUser, mcp.NewTextContent(
+				"Find all recent messages from \""+name+"\" across all my WhatsApp chats.\n\n"+
+					"Steps:\n"+
+					"1. Use list_chats with query=\""+name+"\" to find their chat(s)\n"+
+					"2. Use list_messages for each matching chat with timeframe=\"this_week\"\n"+
+					"3. Also use search_messages with query=\""+name+"\" to catch mentions in group chats\n"+
+					"4. Summarize what they've been saying, any questions for me, and any action items"))},
+		), nil
+	})
+
+	srv.AddPrompt(mcp.NewPrompt("extract_action_items",
+		mcp.WithPromptDescription("Find action items, commitments, and asks from recent conversations with a person"),
+		mcp.WithArgument("person_name",
+			mcp.ArgumentDescription("Name of the person to extract action items from"),
+			mcp.RequiredArgument(),
+		),
+	), func(ctx context.Context, req mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+		name := req.Params.Arguments["person_name"]
+		return mcp.NewGetPromptResult(
+			"Action items from: "+name,
+			[]mcp.PromptMessage{mcp.NewPromptMessage(mcp.RoleUser, mcp.NewTextContent(
+				"Extract action items from my recent WhatsApp conversations with \""+name+"\".\n\n"+
+					"Steps:\n"+
+					"1. Use list_chats with query=\""+name+"\" to find the conversation\n"+
+					"2. Use list_messages with timeframe=\"this_week\" to get recent messages\n"+
+					"3. Identify: things they asked me to do, things I committed to, deadlines mentioned, questions awaiting answers\n"+
+					"4. Present as a structured action item list with owner (me vs them) and urgency"))},
+		), nil
+	})
+
+	srv.AddPrompt(mcp.NewPrompt("search_topic",
+		mcp.WithPromptDescription("Search all WhatsApp conversations for a specific topic using full-text search"),
+		mcp.WithArgument("topic",
+			mcp.ArgumentDescription("Topic or keyword to search for"),
+			mcp.RequiredArgument(),
+		),
+	), func(ctx context.Context, req mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+		topic := req.Params.Arguments["topic"]
+		return mcp.NewGetPromptResult(
+			"Search topic: "+topic,
+			[]mcp.PromptMessage{mcp.NewPromptMessage(mcp.RoleUser, mcp.NewTextContent(
+				"Search all my WhatsApp conversations for \""+topic+"\".\n\n"+
+					"Steps:\n"+
+					"1. Use search_messages with query=\""+topic+"\" to find all mentions across all chats\n"+
+					"2. Group results by conversation/person\n"+
+					"3. Show the most recent and most relevant mentions with context\n"+
+					"4. Summarize: who's talking about this, what's the consensus, any decisions made"))},
+		), nil
+	})
+
+	// --- MCP Resources ---
+
+	srv.AddResource(mcp.NewResource(
+		"whatsapp://guides/search-syntax",
+		"FTS5 Search Syntax Guide",
+		mcp.WithResourceDescription("Reference for search_messages query syntax — FTS5 full-text search operators"),
+		mcp.WithMIMEType("text/plain"),
+	), func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
+		return []mcp.ResourceContents{
+			mcp.TextResourceContents{
+				URI:      req.Params.URI,
+				MIMEType: "text/plain",
+				Text: "FTS5 Search Syntax for search_messages tool:\n\n" +
+					"Simple keywords:     vacation\n" +
+					"Exact phrases:       \"project meeting\"\n" +
+					"Boolean OR:          vacation OR holiday\n" +
+					"Boolean AND:         budget AND meeting (default: AND)\n" +
+					"Exclusion:           meeting -cancelled\n" +
+					"Prefix wildcard:     vacat* (matches vacation, vacations, etc.)\n" +
+					"Combine:             \"action items\" -done\n\n" +
+					"Time filtering (combine with any query):\n" +
+					"  timeframe: today, yesterday, this_week, last_week, last_3_days, last_hour, this_month\n" +
+					"  after/before: ISO-8601 timestamps (e.g., 2025-01-15T00:00:00Z)\n\n" +
+					"Results include ±2 surrounding messages for context.",
+			},
+		}, nil
+	})
+
+	srv.AddResource(mcp.NewResource(
+		"whatsapp://guides/timeframes",
+		"Valid Timeframe Presets",
+		mcp.WithResourceDescription("List of valid timeframe values for list_messages, search_messages, and catch_up tools"),
+		mcp.WithMIMEType("text/plain"),
+	), func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
+		return []mcp.ResourceContents{
+			mcp.TextResourceContents{
+				URI:      req.Params.URI,
+				MIMEType: "text/plain",
+				Text: "Valid timeframe presets for list_messages, search_messages, and catch_up:\n\n" +
+					"  last_hour    — messages from the last 60 minutes\n" +
+					"  today        — messages since midnight today\n" +
+					"  yesterday    — messages from yesterday (midnight to midnight)\n" +
+					"  last_3_days  — messages from the last 3 days\n" +
+					"  this_week    — messages since Monday of this week\n" +
+					"  last_week    — messages from the previous week (Mon-Sun)\n" +
+					"  this_month   — messages since the 1st of this month\n\n" +
+					"Alternatively, use after/before with ISO-8601 timestamps for custom ranges.",
+			},
+		}, nil
 	})
 
 	go func() {
