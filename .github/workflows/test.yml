@@ -16,33 +16,16 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
-
-      - name: Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-
-      - name: Install dependencies
-        run: go mod download
+          go-version-file: go.mod
+          cache: true
 
       - name: Run go vet
         run: go vet ./...
 
       - name: Run go fmt check
-        run: |
-          if [ -n "$(gofmt -l .)" ]; then
-            echo "Go files must be formatted with gofmt. Please run:"
-            echo "  gofmt -w ."
-            exit 1
-          fi
+        run: test -z "$(gofmt -l .)" || { gofmt -l . && exit 1; }
 
-      - name: Build
-        run: CGO_ENABLED=1 go build -tags "sqlite_fts5" -o bin/whatsapp-mcp ./cmd/whatsapp-mcp
+      - name: Build with FTS5
+        run: CGO_ENABLED=1 go build -tags sqlite_fts5 -o /dev/null ./cmd/whatsapp-mcp

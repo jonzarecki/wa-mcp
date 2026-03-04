@@ -484,3 +484,58 @@ func (d *DB) GetMediaSummary(after, before string) (*domain.MediaSummary, error)
 
 	return summary, nil
 }
+
+// ListUnreadChats returns chats with unread message counts.
+func (d *DB) ListUnreadChats(onlyGroups bool) ([]domain.UnreadChatInfo, error) {
+	query := `
+		SELECT c.jid, c.name, COUNT(m.id) as unread_count, MAX(m.timestamp) as last_unread_time
+		FROM messages m
+		JOIN chats c ON m.chat_jid = c.jid
+		WHERE m.is_read = 0 AND m.is_from_me = 0`
+
+	if onlyGroups {
+		query += " AND c.jid LIKE '%@g.us'"
+	}
+
+	query += " GROUP BY c.jid ORDER BY unread_count DESC"
+
+	rows, err := d.Messages.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var chats []domain.UnreadChatInfo
+	for rows.Next() {
+		var info domain.UnreadChatInfo
+		var name sql.NullString
+		var lastTimeStr string
+
+		if err := rows.Scan(&info.ChatJID, &name, &info.UnreadCount, &lastTimeStr); err != nil {
+			continue
+		}
+
+		if name.Valid {
+			info.ChatName = name.String
+		} else {
+			info.ChatName = info.ChatJID
+		}
+		info.IsGroup = strings.HasSuffix(info.ChatJID, "@g.us")
+		info.LastUnreadTime, _ = time.Parse(time.RFC3339, lastTimeStr)
+		chats = append(chats, info)
+	}
+
+	return chats, nil
+}
+
+// MarkAsRead marks messages in a chat as read up to the given timestamp.
+func (d *DB) MarkAsRead(chatJID string, before time.Time) (int64, error) {
+	result, err := d.Messages.Exec(
+		`UPDATE messages SET is_read = 1 WHERE chat_jid = ? AND is_read = 0 AND datetime(timestamp) <= datetime(?)`,
+		chatJID, before.Format(time.RFC3339),
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}

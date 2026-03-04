@@ -10,6 +10,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"go.mau.fi/whatsmeow"
+	waStore "go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	waLog "go.mau.fi/whatsmeow/util/log"
 
@@ -25,7 +26,10 @@ type Client struct {
 }
 
 // New creates a new WhatsApp client with the given store and configuration.
-func New(db *store.DB, baseDir string, logLevel string, appLogger *slog.Logger) (*Client, error) {
+func New(db *store.DB, baseDir string, logLevel string, appLogger *slog.Logger, deviceName string) (*Client, error) {
+	if deviceName != "" {
+		waStore.SetOSInfo(deviceName, [3]uint32{1, 0, 0})
+	}
 	if baseDir == "" {
 		baseDir = "store"
 	}
