@@ -9,6 +9,21 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 )
 
+// handleReceipt processes read receipts — syncs WhatsApp read state to our DB.
+func (c *Client) handleReceipt(receipt *events.Receipt) {
+	if receipt.Type != types.ReceiptTypeRead && receipt.Type != types.ReceiptTypeReadSelf {
+		return
+	}
+
+	for _, msgID := range receipt.MessageIDs {
+		chatJID := receipt.Chat.String()
+		_, _ = c.Store.Messages.Exec(
+			`UPDATE messages SET is_read = 1 WHERE id = ? AND chat_jid = ? AND is_read = 0`,
+			msgID, chatJID,
+		)
+	}
+}
+
 // handleMessage processes real-time incoming messages and persists them.
 func (c *Client) handleMessage(msg *events.Message) {
 	chatJID := msg.Info.Chat.String()
@@ -41,10 +56,11 @@ func (c *Client) handleMessage(msg *events.Message) {
 		c.Logger.Warn("failed to upsert chat", "jid", chatJID, "err", err)
 	}
 
+	isRead := msg.Info.IsFromMe
 	if _, err := c.Store.Messages.Exec(`INSERT OR REPLACE INTO messages
-		(id, chat_jid, sender, content, timestamp, is_from_me, media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		msg.Info.ID, chatJID, sender, content, msg.Info.Timestamp, msg.Info.IsFromMe, mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength,
+		(id, chat_jid, sender, content, timestamp, is_from_me, media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length, is_read)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		msg.Info.ID, chatJID, sender, content, msg.Info.Timestamp, msg.Info.IsFromMe, mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength, isRead,
 	); err != nil {
 		c.Logger.Warn("failed to store message", "id", msg.Info.ID, "chat_jid", chatJID, "err", err)
 	}
@@ -71,6 +87,16 @@ func (c *Client) handleHistorySync(hs *events.HistorySync) {
 
 		name := c.getChatName(jid, chatJID, conv, "")
 
+		// Use WhatsApp's unread state from the conversation protobuf
+		unreadCount := int(conv.GetUnreadCount())
+		markedAsUnread := conv.GetMarkedAsUnread()
+
+		if unreadCount > 0 || markedAsUnread {
+			c.Logger.Info("history sync: chat has unreads",
+				"jid", chatJID, "name", name,
+				"unread_count", unreadCount, "marked_as_unread", markedAsUnread)
+		}
+
 		if len(conv.Messages) > 0 && conv.Messages[0] != nil && conv.Messages[0].Message != nil {
 			ts := conv.Messages[0].Message.GetMessageTimestamp()
 			if ts != 0 {
@@ -81,6 +107,7 @@ func (c *Client) handleHistorySync(hs *events.HistorySync) {
 			}
 		}
 
+		incomingIdx := 0
 		for _, m := range conv.Messages {
 			if m == nil || m.Message == nil {
 				continue
@@ -152,9 +179,26 @@ func (c *Client) handleHistorySync(hs *events.HistorySync) {
 			}
 			t := time.Unix(int64(ts), 0)
 
-			if _, err := c.Store.Messages.Exec(`INSERT OR REPLACE INTO messages
-				(id, chat_jid, sender, content, timestamp, is_from_me, media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, chatJID, snd, text, t, fromMe, mt, fn, u, mk, sha, enc, fl); err != nil {
+			// Determine read state from WhatsApp's unread count.
+			// Messages arrive newest-first. The first `unreadCount` incoming
+			// (non-fromMe) messages are unread. fromMe messages are always read.
+			isRead := true
+			if !fromMe {
+				if markedAsUnread && unreadCount == 0 {
+					if incomingIdx == 0 {
+						isRead = false
+					}
+				} else if incomingIdx < unreadCount {
+					isRead = false
+				}
+				incomingIdx++
+			}
+
+			// Use INSERT OR IGNORE so history sync never overwrites real-time messages
+			// (which are more authoritative for is_read state).
+			if _, err := c.Store.Messages.Exec(`INSERT OR IGNORE INTO messages
+				(id, chat_jid, sender, content, timestamp, is_from_me, media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length, is_read)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, chatJID, snd, text, t, fromMe, mt, fn, u, mk, sha, enc, fl, isRead); err != nil {
 				c.Logger.Warn("history sync: failed to store message", "id", id, "chat_jid", chatJID, "err", err)
 				continue
 			}

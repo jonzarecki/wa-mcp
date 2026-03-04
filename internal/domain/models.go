@@ -94,6 +94,15 @@ type CatchUpOptions struct {
 	OnlyGroups bool   // Only include group chat activity
 }
 
+// UnreadChatInfo represents a chat with unread messages.
+type UnreadChatInfo struct {
+	ChatJID        string    `json:"chat_jid"`
+	ChatName       string    `json:"chat_name"`
+	IsGroup        bool      `json:"is_group"`
+	UnreadCount    int       `json:"unread_count"`
+	LastUnreadTime time.Time `json:"last_unread_time"`
+}
+
 // CatchUpSummary represents the result of a catch_up operation.
 type CatchUpSummary struct {
 	Timeframe      string           `json:"timeframe"`
