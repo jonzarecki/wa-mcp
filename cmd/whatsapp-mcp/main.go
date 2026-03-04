@@ -411,9 +411,9 @@ func main() {
 		}
 
 		return mcp.NewToolResultJSON(map[string]any{
-			"success":        true,
-			"unread_chats":   chats,
-			"total_unread":   total,
+			"success":           true,
+			"unread_chats":      chats,
+			"total_unread":      total,
 			"chats_with_unread": len(chats),
 		})
 	})
@@ -492,9 +492,9 @@ func main() {
 		}
 
 		return mcp.NewToolResultJSON(map[string]any{
-			"success":       true,
-			"messages_read": count,
-			"chat_jid":      chatJID,
+			"success":            true,
+			"messages_read":      count,
+			"chat_jid":           chatJID,
 			"synced_to_whatsapp": wasynced,
 		})
 	})
