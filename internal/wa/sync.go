@@ -194,7 +194,9 @@ func (c *Client) handleHistorySync(hs *events.HistorySync) {
 				incomingIdx++
 			}
 
-			if _, err := c.Store.Messages.Exec(`INSERT OR REPLACE INTO messages
+			// Use INSERT OR IGNORE so history sync never overwrites real-time messages
+			// (which are more authoritative for is_read state).
+			if _, err := c.Store.Messages.Exec(`INSERT OR IGNORE INTO messages
 				(id, chat_jid, sender, content, timestamp, is_from_me, media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length, is_read)
 				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, chatJID, snd, text, t, fromMe, mt, fn, u, mk, sha, enc, fl, isRead); err != nil {
 				c.Logger.Warn("history sync: failed to store message", "id", id, "chat_jid", chatJID, "err", err)
