@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	mcp "github.com/mark3labs/mcp-go/mcp"
@@ -35,6 +37,8 @@ func main() {
 		"db_dir", cfg.DBDir,
 		"log_level", cfg.LogLevelString(),
 		"ffmpeg", cfg.FFmpegPath,
+		"transport", cfg.MCP.Transport,
+		"http_addr", cfg.MCP.HTTPAddr,
 	)
 
 	db, err := store.Open(cfg.DBDir)
@@ -375,13 +379,49 @@ func main() {
 		close(stopped)
 	}()
 
-	go func() {
-		if err := server.ServeStdio(srv); err != nil {
-			logger.Error("MCP stdio error", "err", err)
+	switch strings.ToLower(cfg.MCP.Transport) {
+	case "http":
+		httpOpts := []server.StreamableHTTPOption{
+			server.WithEndpointPath("/mcp"),
+			server.WithStateLess(true),
 		}
-		sigc <- syscall.SIGINT
-	}()
+		httpSrv := server.NewStreamableHTTPServer(srv, httpOpts...)
 
-	<-stopped
+		handler := http.Handler(httpSrv)
+		if cfg.MCP.APIKey != "" {
+			apiKey := cfg.MCP.APIKey
+			handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				auth := r.Header.Get("Authorization")
+				if auth != "Bearer "+apiKey {
+					http.Error(w, "unauthorized", http.StatusUnauthorized)
+					return
+				}
+				httpSrv.ServeHTTP(w, r)
+			})
+		}
+
+		httpServer := &http.Server{Addr: cfg.MCP.HTTPAddr, Handler: handler}
+		go func() {
+			logger.Info("MCP HTTP server starting", "addr", cfg.MCP.HTTPAddr)
+			if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				logger.Error("MCP HTTP error", "err", err)
+			}
+			sigc <- syscall.SIGINT
+		}()
+
+		<-stopped
+		_ = httpServer.Close()
+
+	default:
+		go func() {
+			if err := server.ServeStdio(srv); err != nil {
+				logger.Error("MCP stdio error", "err", err)
+			}
+			sigc <- syscall.SIGINT
+		}()
+
+		<-stopped
+	}
+
 	logger.Info("shutdown complete")
 }

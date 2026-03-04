@@ -25,6 +25,9 @@ type WhatsAppConfig struct {
 // MCPConfig holds MCP server configuration.
 type MCPConfig struct {
 	MaxPageSize int
+	Transport   string // "stdio" (default) or "http"
+	HTTPAddr    string // listen address for HTTP mode (e.g. ":8085")
+	APIKey      string // optional Bearer token for HTTP auth
 }
 
 // Load loads configuration from environment variables.
@@ -37,6 +40,9 @@ func Load() (*Config, error) {
 		},
 		MCP: MCPConfig{
 			MaxPageSize: 200,
+			Transport:   getEnv("MCP_TRANSPORT", "stdio"),
+			HTTPAddr:    getEnv("MCP_HTTP_ADDR", ":8085"),
+			APIKey:      getEnv("MCP_API_KEY", ""),
 		},
 	}
 
