@@ -69,6 +69,9 @@ func main() {
 	srv.AddTool(mcp.NewTool(
 		"list_chats",
 		mcp.WithDescription("List recent WhatsApp conversations with message previews, sorted by most recent activity. Search by contact/group name or phone number to find specific conversations. Supports groups-only filtering and pagination."),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(true),
 		mcp.WithString("query",
 			mcp.Description("Search term to filter chats by name, phone number, or JID. Examples: 'Bob', '447123456789', '44123', 'work group'. Case-insensitive partial match."),
 		),
@@ -119,6 +122,9 @@ func main() {
 	srv.AddTool(mcp.NewTool(
 		"list_messages",
 		mcp.WithDescription("List messages from a conversation. Filter by contact/group name and optionally by date range. Returns messages with content, sender, timestamp, and media type."),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(true),
 		mcp.WithString("recipient", mcp.Description("Contact/group name (e.g., 'Bob'), phone number (e.g., '447123456789'), or JID. Uses fuzzy matching against chat history.")),
 		mcp.WithString("timeframe", mcp.Description("Natural time range (instead of after/before): 'last_hour', 'today', 'yesterday', 'last_3_days', 'this_week', 'last_week', 'this_month'. Cannot be combined with after/before.")),
 		mcp.WithString("after", mcp.Description("ISO-8601 timestamp (e.g., '2025-01-15T00:00:00Z') - only messages after this time. Cannot be combined with timeframe.")),
@@ -165,6 +171,9 @@ func main() {
 	srv.AddTool(mcp.NewTool(
 		"search_messages",
 		mcp.WithDescription("Search message content across all conversations. Supports keywords, exact phrases (\"project meeting\"), boolean operators (OR/AND), exclusion (-word), and wildcards (vacat*). Returns matching messages with ±2 surrounding messages for context."),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(true),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Search query string. Use simple keywords for best results. Examples: 'vacation', '\"project meeting\"', 'vacation OR holiday'.")),
 		mcp.WithString("timeframe", mcp.Description("Natural time range (instead of after/before): 'last_hour', 'today', 'yesterday', 'last_3_days', 'this_week', 'last_week', 'this_month'. Cannot be combined with after/before.")),
 		mcp.WithString("after", mcp.Description("ISO-8601 timestamp (e.g., '2025-01-15T00:00:00Z') - only messages after this time. Cannot be combined with timeframe.")),
@@ -195,6 +204,9 @@ func main() {
 	srv.AddTool(mcp.NewTool(
 		"send_message",
 		mcp.WithDescription("Send a text message, media file (image/video/audio/document), or both to a WhatsApp contact or group. Supports replying to messages for threaded conversations. Audio files are sent as voice messages."),
+		mcp.WithReadOnlyHintAnnotation(false),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(false),
 		mcp.WithString("recipient", mcp.Required(), mcp.Description("Contact/group name (e.g., 'Bob', 'Project Team') or phone number without '+' (e.g., '447123456789').")),
 		mcp.WithString("text", mcp.Description("Message text. If media_path provided, becomes caption for the media. If no media_path, sent as text message. Optional for media-only messages.")),
 		mcp.WithString("media_path", mcp.Description("Absolute path to media file. Supports images (jpg/png), videos (mp4), audio (ogg/mp3/wav/m4a), documents (pdf/docx). Audio files are sent as voice messages.")),
@@ -261,6 +273,9 @@ func main() {
 	srv.AddTool(mcp.NewTool(
 		"download_media",
 		mcp.WithDescription("Download media (image, video, audio, document) from a message to local storage. Returns the file path where the media was saved."),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(true),
 		mcp.WithString("message_id", mcp.Required(), mcp.Description("Message ID that contains the media to download")),
 		mcp.WithString("chat_jid", mcp.Required(), mcp.Description("Chat identifier from the message object (the chat_jid field).")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -297,6 +312,9 @@ func main() {
 	srv.AddTool(mcp.NewTool(
 		"get_connection_status",
 		mcp.WithDescription("Check WhatsApp connection status and server health."),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(true),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		status := map[string]any{
 			"connected":      false,
@@ -331,6 +349,9 @@ func main() {
 	srv.AddTool(mcp.NewTool(
 		"catch_up",
 		mcp.WithDescription("Get a summary of recent WhatsApp activity showing active conversations, total messages, questions directed at you, and media received."),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(true),
 		mcp.WithString("timeframe",
 			mcp.Description("Time range to summarize: 'last_hour', 'today', 'yesterday', 'last_3_days', 'this_week', 'last_week', 'this_month'"),
 			mcp.DefaultString("today"),
@@ -364,6 +385,9 @@ func main() {
 	srv.AddTool(mcp.NewTool(
 		"list_unread_chats",
 		mcp.WithDescription("List chats with unread messages, ordered by unread count. Shows which conversations need your attention."),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(true),
 		mcp.WithBoolean("groups_only",
 			mcp.Description("Only return group chats with unreads."),
 			mcp.DefaultBool(false),
@@ -395,6 +419,9 @@ func main() {
 	srv.AddTool(mcp.NewTool(
 		"mark_as_read",
 		mcp.WithDescription("Mark messages in a chat as read. Use after reviewing a conversation or digest to clear unread state."),
+		mcp.WithReadOnlyHintAnnotation(false),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(true),
 		mcp.WithString("chat_jid", mcp.Required(), mcp.Description("Chat JID to mark as read. Get from list_unread_chats or list_chats.")),
 		mcp.WithString("before", mcp.Description("Optional ISO-8601 timestamp — only mark messages before this time. Defaults to now.")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

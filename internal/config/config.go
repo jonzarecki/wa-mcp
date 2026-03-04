@@ -13,6 +13,7 @@ type Config struct {
 	DBDir      string
 	LogLevel   slog.Level
 	FFmpegPath string
+	Timezone   string
 	WhatsApp   WhatsAppConfig
 	MCP        MCPConfig
 }
@@ -35,6 +36,7 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		DBDir:      getEnv("DB_DIR", "store"),
 		FFmpegPath: getEnv("FFMPEG_PATH", "ffmpeg"),
+		Timezone:   getEnv("TZ", "UTC"),
 		WhatsApp: WhatsAppConfig{
 			QRTimeout: 3 * time.Minute,
 		},
