@@ -508,46 +508,6 @@ func main() {
 		), nil
 	})
 
-	srv.AddPrompt(mcp.NewPrompt("extract_action_items",
-		mcp.WithPromptDescription("Find action items, commitments, and asks from recent conversations with a person"),
-		mcp.WithArgument("person_name",
-			mcp.ArgumentDescription("Name of the person to extract action items from"),
-			mcp.RequiredArgument(),
-		),
-	), func(ctx context.Context, req mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
-		name := req.Params.Arguments["person_name"]
-		return mcp.NewGetPromptResult(
-			"Action items from: "+name,
-			[]mcp.PromptMessage{mcp.NewPromptMessage(mcp.RoleUser, mcp.NewTextContent(
-				"Extract action items from my recent WhatsApp conversations with \""+name+"\".\n\n"+
-					"Steps:\n"+
-					"1. Use list_chats with query=\""+name+"\" to find the conversation\n"+
-					"2. Use list_messages with timeframe=\"this_week\" to get recent messages\n"+
-					"3. Identify: things they asked me to do, things I committed to, deadlines mentioned, questions awaiting answers\n"+
-					"4. Present as a structured action item list with owner (me vs them) and urgency"))},
-		), nil
-	})
-
-	srv.AddPrompt(mcp.NewPrompt("search_topic",
-		mcp.WithPromptDescription("Search all WhatsApp conversations for a specific topic using full-text search"),
-		mcp.WithArgument("topic",
-			mcp.ArgumentDescription("Topic or keyword to search for"),
-			mcp.RequiredArgument(),
-		),
-	), func(ctx context.Context, req mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
-		topic := req.Params.Arguments["topic"]
-		return mcp.NewGetPromptResult(
-			"Search topic: "+topic,
-			[]mcp.PromptMessage{mcp.NewPromptMessage(mcp.RoleUser, mcp.NewTextContent(
-				"Search all my WhatsApp conversations for \""+topic+"\".\n\n"+
-					"Steps:\n"+
-					"1. Use search_messages with query=\""+topic+"\" to find all mentions across all chats\n"+
-					"2. Group results by conversation/person\n"+
-					"3. Show the most recent and most relevant mentions with context\n"+
-					"4. Summarize: who's talking about this, what's the consensus, any decisions made"))},
-		), nil
-	})
-
 	// --- MCP Resources ---
 
 	srv.AddResource(mcp.NewResource(
