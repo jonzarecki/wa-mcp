@@ -91,6 +91,12 @@ func (c *Client) handleHistorySync(hs *events.HistorySync) {
 		unreadCount := int(conv.GetUnreadCount())
 		markedAsUnread := conv.GetMarkedAsUnread()
 
+		if unreadCount > 0 || markedAsUnread {
+			c.Logger.Info("history sync: chat has unreads",
+				"jid", chatJID, "name", name,
+				"unread_count", unreadCount, "marked_as_unread", markedAsUnread)
+		}
+
 		if len(conv.Messages) > 0 && conv.Messages[0] != nil && conv.Messages[0].Message != nil {
 			ts := conv.Messages[0].Message.GetMessageTimestamp()
 			if ts != 0 {
@@ -101,7 +107,7 @@ func (c *Client) handleHistorySync(hs *events.HistorySync) {
 			}
 		}
 
-		msgIdx := 0
+		incomingIdx := 0
 		for _, m := range conv.Messages {
 			if m == nil || m.Message == nil {
 				continue
@@ -174,20 +180,19 @@ func (c *Client) handleHistorySync(hs *events.HistorySync) {
 			t := time.Unix(int64(ts), 0)
 
 			// Determine read state from WhatsApp's unread count.
-			// Messages are ordered newest-first in history sync.
-			// The first `unreadCount` non-fromMe messages are unread.
+			// Messages arrive newest-first. The first `unreadCount` incoming
+			// (non-fromMe) messages are unread. fromMe messages are always read.
 			isRead := true
-			if fromMe {
-				isRead = true
-			} else if markedAsUnread && unreadCount == 0 {
-				// Chat flagged as unread but no specific count — mark latest as unread
-				if msgIdx == 0 {
+			if !fromMe {
+				if markedAsUnread && unreadCount == 0 {
+					if incomingIdx == 0 {
+						isRead = false
+					}
+				} else if incomingIdx < unreadCount {
 					isRead = false
 				}
-			} else if !fromMe && msgIdx < unreadCount {
-				isRead = false
+				incomingIdx++
 			}
-			msgIdx++
 
 			if _, err := c.Store.Messages.Exec(`INSERT OR REPLACE INTO messages
 				(id, chat_jid, sender, content, timestamp, is_from_me, media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length, is_read)
