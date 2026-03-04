@@ -110,10 +110,10 @@ func migrate(db *sql.DB) error {
 	// Rebuild the index to backfill from existing messages
 	_, _ = db.Exec(`INSERT INTO messages_fts(messages_fts) VALUES('rebuild')`)
 
-	// Add is_read column for unread tracking (safe to call multiple times)
+	// Add is_read column for unread tracking (safe to call multiple times).
+	// All existing messages default to read (1). Only new incoming messages
+	// received after the server starts will be marked unread (0) via sync.go.
 	_, _ = db.Exec(`ALTER TABLE messages ADD COLUMN is_read BOOLEAN DEFAULT 1`)
-	// Seed: mark last 7 days of incoming messages as unread
-	_, _ = db.Exec(`UPDATE messages SET is_read = 0 WHERE is_from_me = 0 AND is_read = 1 AND timestamp > datetime('now', '-7 days')`)
 
 	return nil
 }
