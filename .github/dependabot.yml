@@ -1,0 +1,28 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "deps:"
+    groups:
+      whatsmeow:
+        patterns:
+          - "go.mau.fi/*"
+      mcp-go:
+        patterns:
+          - "github.com/mark3labs/*"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    labels:
+      - ci
+    commit-message:
+      prefix: "ci:"
