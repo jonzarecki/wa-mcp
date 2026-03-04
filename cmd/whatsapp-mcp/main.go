@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	mcp "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -355,6 +356,84 @@ func main() {
 		return mcp.NewToolResultJSON(map[string]any{
 			"success": true,
 			"summary": summary,
+		})
+	})
+
+	srv.AddTool(mcp.NewTool(
+		"list_unread_chats",
+		mcp.WithDescription("List chats with unread messages, ordered by unread count. Shows which conversations need your attention."),
+		mcp.WithBoolean("groups_only",
+			mcp.Description("Only return group chats with unreads."),
+			mcp.DefaultBool(false),
+		),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		onlyGroups := mcp.ParseBoolean(req, "groups_only", false)
+		chats, err := db.ListUnreadChats(onlyGroups)
+		if err != nil {
+			return mcp.NewToolResultStructuredOnly(map[string]any{
+				"success": false,
+				"error":   "failed to list unread chats",
+				"details": err.Error(),
+			}), nil
+		}
+
+		total := 0
+		for _, c := range chats {
+			total += c.UnreadCount
+		}
+
+		return mcp.NewToolResultJSON(map[string]any{
+			"success":        true,
+			"unread_chats":   chats,
+			"total_unread":   total,
+			"chats_with_unread": len(chats),
+		})
+	})
+
+	srv.AddTool(mcp.NewTool(
+		"mark_as_read",
+		mcp.WithDescription("Mark messages in a chat as read. Use after reviewing a conversation or digest to clear unread state."),
+		mcp.WithString("chat_jid", mcp.Required(), mcp.Description("Chat JID to mark as read. Get from list_unread_chats or list_chats.")),
+		mcp.WithString("before", mcp.Description("Optional ISO-8601 timestamp — only mark messages before this time. Defaults to now.")),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		chatJID := mcp.ParseString(req, "chat_jid", "")
+		if chatJID == "" {
+			return mcp.NewToolResultStructuredOnly(map[string]any{
+				"success": false,
+				"error":   "chat_jid is required",
+			}), nil
+		}
+
+		beforeStr := mcp.ParseString(req, "before", "")
+		var before time.Time
+		if beforeStr != "" {
+			var err error
+			before, err = time.Parse(time.RFC3339, beforeStr)
+			if err != nil {
+				return mcp.NewToolResultStructuredOnly(map[string]any{
+					"success": false,
+					"error":   "invalid 'before' timestamp",
+					"details": err.Error(),
+					"hint":    "Use ISO-8601 format: 2025-01-15T00:00:00Z",
+				}), nil
+			}
+		} else {
+			before = time.Now()
+		}
+
+		count, err := db.MarkAsRead(chatJID, before)
+		if err != nil {
+			return mcp.NewToolResultStructuredOnly(map[string]any{
+				"success": false,
+				"error":   "failed to mark as read",
+				"details": err.Error(),
+			}), nil
+		}
+
+		return mcp.NewToolResultJSON(map[string]any{
+			"success":       true,
+			"messages_read": count,
+			"chat_jid":      chatJID,
 		})
 	})
 
