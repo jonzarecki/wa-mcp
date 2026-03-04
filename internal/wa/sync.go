@@ -9,6 +9,21 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 )
 
+// handleReceipt processes read receipts — syncs WhatsApp read state to our DB.
+func (c *Client) handleReceipt(receipt *events.Receipt) {
+	if receipt.Type != types.ReceiptTypeRead && receipt.Type != types.ReceiptTypeReadSelf {
+		return
+	}
+
+	for _, msgID := range receipt.MessageIDs {
+		chatJID := receipt.Chat.String()
+		_, _ = c.Store.Messages.Exec(
+			`UPDATE messages SET is_read = 1 WHERE id = ? AND chat_jid = ? AND is_read = 0`,
+			msgID, chatJID,
+		)
+	}
+}
+
 // handleMessage processes real-time incoming messages and persists them.
 func (c *Client) handleMessage(msg *events.Message) {
 	chatJID := msg.Info.Chat.String()
@@ -72,6 +87,10 @@ func (c *Client) handleHistorySync(hs *events.HistorySync) {
 
 		name := c.getChatName(jid, chatJID, conv, "")
 
+		// Use WhatsApp's unread state from the conversation protobuf
+		unreadCount := int(conv.GetUnreadCount())
+		markedAsUnread := conv.GetMarkedAsUnread()
+
 		if len(conv.Messages) > 0 && conv.Messages[0] != nil && conv.Messages[0].Message != nil {
 			ts := conv.Messages[0].Message.GetMessageTimestamp()
 			if ts != 0 {
@@ -82,6 +101,7 @@ func (c *Client) handleHistorySync(hs *events.HistorySync) {
 			}
 		}
 
+		msgIdx := 0
 		for _, m := range conv.Messages {
 			if m == nil || m.Message == nil {
 				continue
@@ -153,8 +173,23 @@ func (c *Client) handleHistorySync(hs *events.HistorySync) {
 			}
 			t := time.Unix(int64(ts), 0)
 
-			isRead := fromMe
-		if _, err := c.Store.Messages.Exec(`INSERT OR REPLACE INTO messages
+			// Determine read state from WhatsApp's unread count.
+			// Messages are ordered newest-first in history sync.
+			// The first `unreadCount` non-fromMe messages are unread.
+			isRead := true
+			if fromMe {
+				isRead = true
+			} else if markedAsUnread && unreadCount == 0 {
+				// Chat flagged as unread but no specific count — mark latest as unread
+				if msgIdx == 0 {
+					isRead = false
+				}
+			} else if !fromMe && msgIdx < unreadCount {
+				isRead = false
+			}
+			msgIdx++
+
+			if _, err := c.Store.Messages.Exec(`INSERT OR REPLACE INTO messages
 				(id, chat_jid, sender, content, timestamp, is_from_me, media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length, is_read)
 				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, chatJID, snd, text, t, fromMe, mt, fn, u, mk, sha, enc, fl, isRead); err != nil {
 				c.Logger.Warn("history sync: failed to store message", "id", id, "chat_jid", chatJID, "err", err)

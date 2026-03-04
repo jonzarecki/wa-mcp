@@ -16,9 +16,10 @@ func (c *Client) registerHandlers() {
 			c.handleMessage(v)
 		case *events.HistorySync:
 			c.handleHistorySync(v)
+		case *events.Receipt:
+			c.handleReceipt(v)
 		case *events.Connected:
 			c.Logger.Info("connected")
-			// After connecting, backfill chat names from contacts/groups
 			go c.backfillChatNames()
 		case *events.LoggedOut:
 			c.Logger.Warn("logged out")
