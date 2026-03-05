@@ -13,6 +13,7 @@ import (
 	mcp "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/types"
 
 	"github.com/jonzarecki/wa-mcp/internal/config"
@@ -452,22 +453,6 @@ func main() {
 			before = time.Now()
 		}
 
-		// Get unread message IDs before marking, so we can send read receipts to WhatsApp
-		var unreadIDs []string
-		rows, qErr := db.Messages.Query(
-			`SELECT id FROM messages WHERE chat_jid = ? AND is_read = 0 AND datetime(timestamp) <= datetime(?) ORDER BY timestamp DESC LIMIT 100`,
-			chatJID, before.Format(time.RFC3339),
-		)
-		if qErr == nil {
-			for rows.Next() {
-				var id string
-				if rows.Scan(&id) == nil && id != "" {
-					unreadIDs = append(unreadIDs, id)
-				}
-			}
-			rows.Close()
-		}
-
 		count, err := db.MarkAsRead(chatJID, before)
 		if err != nil {
 			return mcp.NewToolResultStructuredOnly(map[string]any{
@@ -477,14 +462,17 @@ func main() {
 			}), nil
 		}
 
-		// Sync read state back to WhatsApp (clears green badges on phone)
+		// Sync read state to WhatsApp via app state (clears unread badge across all devices).
+		// Uses SendAppState with BuildMarkChatAsRead — the native mechanism WhatsApp uses
+		// when a chat is opened on any device, unlike MarkRead which sends per-message receipts.
 		wasynced := false
-		if len(unreadIDs) > 0 && waclient.WA != nil && waclient.WA.IsConnected() {
+		if waclient.WA != nil && waclient.WA.IsConnected() {
 			jid, parseErr := types.ParseJID(chatJID)
 			if parseErr == nil {
-				markErr := waclient.WA.MarkRead(ctx, unreadIDs, before, jid, types.EmptyJID)
-				if markErr != nil {
-					logger.Warn("failed to sync read receipts to WhatsApp", "chat", chatJID, "err", markErr)
+				patch := appstate.BuildMarkChatAsRead(jid, true, before, nil)
+				syncErr := waclient.WA.SendAppState(ctx, patch)
+				if syncErr != nil {
+					logger.Warn("failed to sync mark-as-read to WhatsApp", "chat", chatJID, "err", syncErr)
 				} else {
 					wasynced = true
 				}
