@@ -115,5 +115,8 @@ func migrate(db *sql.DB) error {
 	// received after the server starts will be marked unread (0) via sync.go.
 	_, _ = db.Exec(`ALTER TABLE messages ADD COLUMN is_read BOOLEAN DEFAULT 1`)
 
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_messages_unread
+		ON messages(chat_jid, is_read, is_from_me) WHERE is_read = 0`)
+
 	return nil
 }

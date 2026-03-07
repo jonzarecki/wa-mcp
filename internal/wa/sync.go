@@ -10,16 +10,40 @@ import (
 )
 
 // handleReceipt processes read receipts — syncs WhatsApp read state to our DB.
+// WhatsApp read receipts imply "everything up to here is read," so after marking
+// the specific message IDs we also mark all older messages in the chat as read.
 func (c *Client) handleReceipt(receipt *events.Receipt) {
 	if receipt.Type != types.ReceiptTypeRead && receipt.Type != types.ReceiptTypeReadSelf {
 		return
 	}
 
+	chatJID := receipt.Chat.String()
+
 	for _, msgID := range receipt.MessageIDs {
-		chatJID := receipt.Chat.String()
 		_, _ = c.Store.Messages.Exec(
 			`UPDATE messages SET is_read = 1 WHERE id = ? AND chat_jid = ? AND is_read = 0`,
 			msgID, chatJID,
+		)
+	}
+
+	if len(receipt.MessageIDs) > 0 {
+		placeholders := strings.Repeat("?,", len(receipt.MessageIDs))
+		placeholders = placeholders[:len(placeholders)-1] // trim trailing comma
+
+		args := []any{chatJID}
+		for _, id := range receipt.MessageIDs {
+			args = append(args, id)
+		}
+		args = append(args, chatJID)
+
+		_, _ = c.Store.Messages.Exec(
+			`UPDATE messages SET is_read = 1
+			 WHERE chat_jid = ? AND is_read = 0 AND is_from_me = 0
+			 AND timestamp <= (
+				SELECT MAX(timestamp) FROM messages
+				WHERE id IN (`+placeholders+`) AND chat_jid = ?
+			 )`,
+			args...,
 		)
 	}
 }
@@ -57,9 +81,18 @@ func (c *Client) handleMessage(msg *events.Message) {
 	}
 
 	isRead := msg.Info.IsFromMe
-	if _, err := c.Store.Messages.Exec(`INSERT OR REPLACE INTO messages
+	if _, err := c.Store.Messages.Exec(`INSERT INTO messages
 		(id, chat_jid, sender, content, timestamp, is_from_me, media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length, is_read)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id, chat_jid) DO UPDATE SET
+			content = excluded.content,
+			media_type = excluded.media_type,
+			filename = excluded.filename,
+			url = excluded.url,
+			media_key = excluded.media_key,
+			file_sha256 = excluded.file_sha256,
+			file_enc_sha256 = excluded.file_enc_sha256,
+			file_length = excluded.file_length`,
 		msg.Info.ID, chatJID, sender, content, msg.Info.Timestamp, msg.Info.IsFromMe, mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength, isRead,
 	); err != nil {
 		c.Logger.Warn("failed to store message", "id", msg.Info.ID, "chat_jid", chatJID, "err", err)
@@ -203,6 +236,27 @@ func (c *Client) handleHistorySync(hs *events.HistorySync) {
 				continue
 			}
 			synced++
+		}
+
+		// Reconcile read state for EXISTING messages that INSERT OR IGNORE skipped.
+		// History sync's UnreadCount is authoritative for what WhatsApp considers unread,
+		// so we use it to fix messages that were read on the phone while the server was offline.
+		if unreadCount == 0 && !markedAsUnread {
+			_, _ = c.Store.Messages.Exec(
+				`UPDATE messages SET is_read = 1 WHERE chat_jid = ? AND is_read = 0`,
+				chatJID,
+			)
+		} else if unreadCount > 0 {
+			_, _ = c.Store.Messages.Exec(
+				`UPDATE messages SET is_read = 1
+				 WHERE chat_jid = ? AND is_read = 0 AND is_from_me = 0
+				 AND id NOT IN (
+					SELECT id FROM messages
+					WHERE chat_jid = ? AND is_from_me = 0
+					ORDER BY timestamp DESC LIMIT ?
+				 )`,
+				chatJID, chatJID, unreadCount,
+			)
 		}
 	}
 
