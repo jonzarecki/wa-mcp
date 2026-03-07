@@ -95,6 +95,7 @@ func New(db *store.DB, baseDir string, logLevel string, appLogger *slog.Logger, 
 	if client == nil {
 		return nil, fmt.Errorf("failed to create client")
 	}
+	client.EmitAppStateEventsOnFullSync = true
 
 	c := &Client{WA: client, Store: db, Logger: appLogger, BaseDir: baseDir}
 	c.registerHandlers()

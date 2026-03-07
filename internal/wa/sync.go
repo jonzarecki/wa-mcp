@@ -48,6 +48,26 @@ func (c *Client) handleReceipt(receipt *events.Receipt) {
 	}
 }
 
+// handleMarkChatAsRead syncs whole-chat read/unread state from another device.
+// This event fires both in real-time and via incremental app state sync on reconnect,
+// covering the gap where the server was offline and messages were read on the phone.
+func (c *Client) handleMarkChatAsRead(evt *events.MarkChatAsRead) {
+	chatJID := evt.JID.String()
+	if evt.Action.GetRead() {
+		_, _ = c.Store.Messages.Exec(
+			`UPDATE messages SET is_read = 1 WHERE chat_jid = ? AND is_read = 0`,
+			chatJID,
+		)
+	} else {
+		_, _ = c.Store.Messages.Exec(
+			`UPDATE messages SET is_read = 0
+			 WHERE chat_jid = ? AND is_from_me = 0
+			 AND id = (SELECT id FROM messages WHERE chat_jid = ? AND is_from_me = 0 ORDER BY timestamp DESC LIMIT 1)`,
+			chatJID, chatJID,
+		)
+	}
+}
+
 // handleMessage processes real-time incoming messages and persists them.
 func (c *Client) handleMessage(msg *events.Message) {
 	chatJID := msg.Info.Chat.String()

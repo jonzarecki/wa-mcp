@@ -18,6 +18,8 @@ func (c *Client) registerHandlers() {
 			c.handleHistorySync(v)
 		case *events.Receipt:
 			c.handleReceipt(v)
+		case *events.MarkChatAsRead:
+			c.handleMarkChatAsRead(v)
 		case *events.Connected:
 			c.Logger.Info("connected")
 			go c.backfillChatNames()

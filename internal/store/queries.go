@@ -8,6 +8,21 @@ import (
 	"github.com/jonzarecki/wa-mcp/internal/domain"
 )
 
+// parseTimestamp parses a timestamp string from SQLite, trying RFC3339 first
+// then falling back to the space-separated format go-sqlite3 uses by default.
+func parseTimestamp(s string) time.Time {
+	t, err := time.Parse(time.RFC3339, s)
+	if err == nil {
+		return t
+	}
+	t, err = time.Parse("2006-01-02 15:04:05Z07:00", s)
+	if err == nil {
+		return t
+	}
+	t, _ = time.Parse("2006-01-02 15:04:05", s)
+	return t
+}
+
 // CountChats returns the total number of chats matching the query.
 func (d *DB) CountChats(query string) (int, error) {
 	q := "SELECT COUNT(*) FROM chats"
@@ -93,7 +108,7 @@ func (d *DB) ListChats(opts domain.ListChatsOptions) ([]domain.Chat, error) {
 			chat.Name = &name.String
 		}
 		if ts.Valid {
-			t, _ := time.Parse(time.RFC3339, ts.String)
+			t := parseTimestamp(ts.String)
 			chat.LastMessageTime = &t
 		}
 
@@ -120,7 +135,7 @@ func (d *DB) GetChat(chatJID string, includeLast bool) (*domain.Chat, error) {
 		chat.Name = &name.String
 	}
 	if ts.Valid {
-		t, _ := time.Parse(time.RFC3339, ts.String)
+		t := parseTimestamp(ts.String)
 		chat.LastMessageTime = &t
 	}
 
@@ -309,7 +324,7 @@ func scanMessage(scanner interface {
 		return msg, err
 	}
 
-	msg.Timestamp, _ = time.Parse(time.RFC3339, ts)
+	msg.Timestamp = parseTimestamp(ts)
 	if chatName.Valid {
 		msg.ChatName = &chatName.String
 	}
@@ -370,7 +385,7 @@ func (d *DB) GetActiveChats(after, before string, onlyGroups bool, limit int) ([
 		}
 
 		chat.IsGroup = strings.Contains(chat.ChatJID, "@g.us")
-		chat.LastMessageTime, _ = time.Parse(time.RFC3339, lastTimeStr)
+		chat.LastMessageTime = parseTimestamp(lastTimeStr)
 
 		var content sql.NullString
 		var isFromMe bool
@@ -521,7 +536,7 @@ func (d *DB) ListUnreadChats(onlyGroups bool) ([]domain.UnreadChatInfo, error) {
 			info.ChatName = info.ChatJID
 		}
 		info.IsGroup = strings.HasSuffix(info.ChatJID, "@g.us")
-		info.LastUnreadTime, _ = time.Parse(time.RFC3339, lastTimeStr)
+		info.LastUnreadTime = parseTimestamp(lastTimeStr)
 		chats = append(chats, info)
 	}
 
