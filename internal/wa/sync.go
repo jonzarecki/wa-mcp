@@ -259,24 +259,39 @@ func (c *Client) handleHistorySync(hs *events.HistorySync) {
 		}
 
 		// Reconcile read state for EXISTING messages that INSERT OR IGNORE skipped.
-		// History sync's UnreadCount is authoritative for what WhatsApp considers unread,
-		// so we use it to fix messages that were read on the phone while the server was offline.
-		if unreadCount == 0 && !markedAsUnread {
-			_, _ = c.Store.Messages.Exec(
-				`UPDATE messages SET is_read = 1 WHERE chat_jid = ? AND is_read = 0`,
-				chatJID,
-			)
-		} else if unreadCount > 0 {
-			_, _ = c.Store.Messages.Exec(
-				`UPDATE messages SET is_read = 1
-				 WHERE chat_jid = ? AND is_read = 0 AND is_from_me = 0
-				 AND id NOT IN (
-					SELECT id FROM messages
-					WHERE chat_jid = ? AND is_from_me = 0
-					ORDER BY timestamp DESC LIMIT ?
-				 )`,
-				chatJID, chatJID, unreadCount,
-			)
+		// Only reconcile when UnreadCount is explicitly present in the protobuf;
+		// later history sync batches omit it (nil), and treating nil as 0 would
+		// incorrectly mark all messages as read.
+		if conv.UnreadCount != nil || markedAsUnread {
+			if unreadCount == 0 && !markedAsUnread {
+				_, _ = c.Store.Messages.Exec(
+					`UPDATE messages SET is_read = 1 WHERE chat_jid = ? AND is_read = 0`,
+					chatJID,
+				)
+			} else if unreadCount > 0 {
+				// Mark the N most recent incoming messages as unread
+				_, _ = c.Store.Messages.Exec(
+					`UPDATE messages SET is_read = 0
+					 WHERE chat_jid = ? AND is_from_me = 0
+					 AND id IN (
+						SELECT id FROM messages
+						WHERE chat_jid = ? AND is_from_me = 0
+						ORDER BY timestamp DESC LIMIT ?
+					 )`,
+					chatJID, chatJID, unreadCount,
+				)
+				// Mark everything else as read
+				_, _ = c.Store.Messages.Exec(
+					`UPDATE messages SET is_read = 1
+					 WHERE chat_jid = ? AND is_read = 0 AND is_from_me = 0
+					 AND id NOT IN (
+						SELECT id FROM messages
+						WHERE chat_jid = ? AND is_from_me = 0
+						ORDER BY timestamp DESC LIMIT ?
+					 )`,
+					chatJID, chatJID, unreadCount,
+				)
+			}
 		}
 	}
 

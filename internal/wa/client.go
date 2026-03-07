@@ -10,6 +10,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"go.mau.fi/whatsmeow"
+	waCompanionReg "go.mau.fi/whatsmeow/proto/waCompanionReg"
 	waStore "go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	waLog "go.mau.fi/whatsmeow/util/log"
@@ -29,6 +30,7 @@ type Client struct {
 func New(db *store.DB, baseDir string, logLevel string, appLogger *slog.Logger, deviceName string) (*Client, error) {
 	if deviceName != "" {
 		waStore.SetOSInfo(deviceName, [3]uint32{1, 0, 0})
+		waStore.DeviceProps.PlatformType = waCompanionReg.DeviceProps_CHROME.Enum()
 	}
 	if baseDir == "" {
 		baseDir = "store"
