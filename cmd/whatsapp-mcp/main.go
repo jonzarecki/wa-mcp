@@ -498,6 +498,65 @@ func main() {
 		})
 	})
 
+	srv.AddTool(mcp.NewTool(
+		"backfill_chat",
+		mcp.WithDescription(
+			"Request older messages for a chat from the primary WhatsApp device (on-demand history sync). "+
+				"Best-effort: the primary phone must be online and WhatsApp may not return full history. "+
+				"Uses the oldest locally stored message as anchor. Each request takes up to 60s. "+
+				"The chat must already have at least 1 message in the local database."),
+		mcp.WithReadOnlyHintAnnotation(false),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(true),
+		mcp.WithString("chat_jid", mcp.Required(), mcp.Description("Chat JID to backfill. Get from list_chats or list_unread_chats.")),
+		mcp.WithNumber("count", mcp.Description("Messages to request per sync request (default 50, max 100).")),
+		mcp.WithNumber("requests", mcp.Description("Number of consecutive backfill requests to attempt (default 3, max 10). Each walks further back in history.")),
+	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		chatJID := mcp.ParseString(req, "chat_jid", "")
+		if chatJID == "" {
+			return mcp.NewToolResultStructuredOnly(map[string]any{
+				"success": false,
+				"error":   "chat_jid is required",
+			}), nil
+		}
+
+		count := mcp.ParseInt(req, "count", 50)
+		if count <= 0 {
+			count = 50
+		}
+		if count > 100 {
+			count = 100
+		}
+
+		requests := mcp.ParseInt(req, "requests", 3)
+		if requests <= 0 {
+			requests = 3
+		}
+		if requests > 10 {
+			requests = 10
+		}
+
+		result, err := waclient.BackfillChat(ctx, wa.BackfillOptions{
+			ChatJID:     chatJID,
+			Count:       count,
+			MaxRequests: requests,
+		})
+		if err != nil {
+			return mcp.NewToolResultStructuredOnly(map[string]any{
+				"success": false,
+				"error":   err.Error(),
+			}), nil
+		}
+
+		return mcp.NewToolResultJSON(map[string]any{
+			"success":        true,
+			"chat_jid":       result.ChatJID,
+			"requests_sent":  result.RequestsSent,
+			"responses_seen": result.ResponsesSeen,
+			"messages_added": result.MessagesAdded,
+		})
+	})
+
 	// --- MCP Prompts ---
 
 	srv.AddPrompt(mcp.NewPrompt("digest_group",

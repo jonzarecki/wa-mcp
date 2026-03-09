@@ -553,6 +553,40 @@ func (d *DB) ListUnreadChats(onlyGroups bool, includeArchived bool, ourJID strin
 	return chats, nil
 }
 
+// OldestMessageInfo holds the anchor data needed for on-demand history sync.
+type OldestMessageInfo struct {
+	MsgID     string
+	FromMe    bool
+	Timestamp time.Time
+}
+
+// GetOldestMessageInfo returns the oldest message in a chat, used as anchor for backfill requests.
+func (d *DB) GetOldestMessageInfo(chatJID string) (OldestMessageInfo, error) {
+	var info OldestMessageInfo
+	var tsStr string
+	err := d.Messages.QueryRow(
+		`SELECT id, is_from_me, timestamp FROM messages WHERE chat_jid = ? ORDER BY timestamp ASC LIMIT 1`,
+		chatJID,
+	).Scan(&info.MsgID, &info.FromMe, &tsStr)
+	if err != nil {
+		return info, err
+	}
+	info.Timestamp = parseTimestamp(tsStr)
+	return info, nil
+}
+
+// CountMessages returns the number of messages in a specific chat, or all messages if chatJID is empty.
+func (d *DB) CountMessages(chatJID string) (int, error) {
+	var count int
+	var err error
+	if chatJID == "" {
+		err = d.Messages.QueryRow("SELECT COUNT(*) FROM messages").Scan(&count)
+	} else {
+		err = d.Messages.QueryRow("SELECT COUNT(*) FROM messages WHERE chat_jid = ?", chatJID).Scan(&count)
+	}
+	return count, err
+}
+
 // MarkAsRead marks messages in a chat as read up to the given timestamp.
 func (d *DB) MarkAsRead(chatJID string, before time.Time) (int64, error) {
 	result, err := d.Messages.Exec(
