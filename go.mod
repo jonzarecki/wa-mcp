@@ -3,7 +3,7 @@ module github.com/jonzarecki/wa-mcp
 go 1.25.0
 
 require (
-	github.com/mark3labs/mcp-go v0.44.1
+	github.com/mark3labs/mcp-go v0.45.0
 	github.com/mattn/go-sqlite3 v1.14.34
 	github.com/mdp/qrterminal v1.0.1
 	github.com/rs/zerolog v1.34.0
