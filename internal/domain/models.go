@@ -101,6 +101,8 @@ type UnreadChatInfo struct {
 	IsGroup        bool      `json:"is_group"`
 	UnreadCount    int       `json:"unread_count"`
 	LastUnreadTime time.Time `json:"last_unread_time"`
+	IsArchived     bool      `json:"is_archived"`
+	IsPinned       bool      `json:"is_pinned"`
 }
 
 // CatchUpSummary represents the result of a catch_up operation.

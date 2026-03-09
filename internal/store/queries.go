@@ -501,12 +501,22 @@ func (d *DB) GetMediaSummary(after, before string) (*domain.MediaSummary, error)
 }
 
 // ListUnreadChats returns chats with unread message counts.
-func (d *DB) ListUnreadChats(onlyGroups bool) ([]domain.UnreadChatInfo, error) {
+// When includeArchived is false, chats archived in WhatsApp are excluded.
+// ourJID is the device JID used to look up chat settings from whatsmeow's store.
+func (d *DB) ListUnreadChats(onlyGroups bool, includeArchived bool, ourJID string) ([]domain.UnreadChatInfo, error) {
 	query := `
-		SELECT c.jid, c.name, COUNT(m.id) as unread_count, MAX(m.timestamp) as last_unread_time
+		SELECT c.jid, c.name, COUNT(m.id) as unread_count, MAX(m.timestamp) as last_unread_time,
+			COALESCE(cs.archived, 0) as is_archived, COALESCE(cs.pinned, 0) as is_pinned
 		FROM messages m
 		JOIN chats c ON m.chat_jid = c.jid
+		LEFT JOIN wadb.whatsmeow_chat_settings cs ON cs.chat_jid = c.jid AND cs.our_jid = ?
 		WHERE m.is_read = 0 AND m.is_from_me = 0`
+
+	args := []any{ourJID}
+
+	if !includeArchived {
+		query += " AND COALESCE(cs.archived, 0) = 0"
+	}
 
 	if onlyGroups {
 		query += " AND c.jid LIKE '%@g.us'"
@@ -514,7 +524,7 @@ func (d *DB) ListUnreadChats(onlyGroups bool) ([]domain.UnreadChatInfo, error) {
 
 	query += " GROUP BY c.jid ORDER BY unread_count DESC"
 
-	rows, err := d.Messages.Query(query)
+	rows, err := d.Messages.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -526,7 +536,7 @@ func (d *DB) ListUnreadChats(onlyGroups bool) ([]domain.UnreadChatInfo, error) {
 		var name sql.NullString
 		var lastTimeStr string
 
-		if err := rows.Scan(&info.ChatJID, &name, &info.UnreadCount, &lastTimeStr); err != nil {
+		if err := rows.Scan(&info.ChatJID, &name, &info.UnreadCount, &lastTimeStr, &info.IsArchived, &info.IsPinned); err != nil {
 			continue
 		}
 

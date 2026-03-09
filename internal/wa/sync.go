@@ -1,13 +1,30 @@
 package wa
 
 import (
+	"context"
 	"database/sql"
 	"strings"
 	"time"
 
+	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 )
+
+// syncAppState does a full app state sync for all patch names on every reconnect.
+// Full sync (not incremental) ensures ALL MarkChatAsRead entries are re-applied,
+// including reads that happened before the current cached version. This matches
+// WhatsApp Web behavior and prevents read state drift after sleep/offline.
+// Also updates whatsmeow's internal chat_settings (archive/pin/mute).
+func (c *Client) syncAppState() {
+	ctx := context.Background()
+	for _, name := range appstate.AllPatchNames {
+		if err := c.WA.FetchAppState(ctx, name, true, false); err != nil {
+			c.Logger.Warn("failed to sync app state", "name", string(name), "err", err)
+		}
+	}
+	c.Logger.Info("app state full sync completed")
+}
 
 // handleReceipt processes read receipts — syncs WhatsApp read state to our DB.
 // WhatsApp read receipts imply "everything up to here is read," so after marking
@@ -148,6 +165,17 @@ func (c *Client) handleHistorySync(hs *events.HistorySync) {
 			c.Logger.Info("history sync: chat has unreads",
 				"jid", chatJID, "name", name,
 				"unread_count", unreadCount, "marked_as_unread", markedAsUnread)
+		}
+
+		// Sync archive/pin/mute from history protobuf to whatsmeow's chat_settings
+		if conv.Archived != nil {
+			_ = c.WA.Store.ChatSettings.PutArchived(context.Background(), jid, conv.GetArchived())
+		}
+		if conv.Pinned != nil {
+			_ = c.WA.Store.ChatSettings.PutPinned(context.Background(), jid, conv.GetPinned() > 0)
+		}
+		if conv.MuteEndTime != nil {
+			_ = c.WA.Store.ChatSettings.PutMutedUntil(context.Background(), jid, time.Unix(int64(conv.GetMuteEndTime()), 0))
 		}
 
 		if len(conv.Messages) > 0 && conv.Messages[0] != nil && conv.Messages[0].Message != nil {

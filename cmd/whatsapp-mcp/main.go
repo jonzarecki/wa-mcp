@@ -395,9 +395,20 @@ func main() {
 			mcp.Description("Only return group chats with unreads."),
 			mcp.DefaultBool(false),
 		),
+		mcp.WithBoolean("include_archived",
+			mcp.Description("Include archived chats in results. By default, archived chats are excluded to match the phone's main chat list."),
+			mcp.DefaultBool(false),
+		),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		onlyGroups := mcp.ParseBoolean(req, "groups_only", false)
-		chats, err := db.ListUnreadChats(onlyGroups)
+		includeArchived := mcp.ParseBoolean(req, "include_archived", false)
+
+		ourJID := ""
+		if waclient.WA != nil && waclient.WA.Store != nil && waclient.WA.Store.ID != nil {
+			ourJID = waclient.WA.Store.ID.String()
+		}
+
+		chats, err := db.ListUnreadChats(onlyGroups, includeArchived, ourJID)
 		if err != nil {
 			return mcp.NewToolResultStructuredOnly(map[string]any{
 				"success": false,

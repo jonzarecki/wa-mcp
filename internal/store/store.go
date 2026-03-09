@@ -11,6 +11,7 @@ import (
 
 type DB struct {
 	Messages *sql.DB
+	DBDir    string
 }
 
 func Open(dbDir string) (*DB, error) {
@@ -29,7 +30,13 @@ func Open(dbDir string) (*DB, error) {
 		return nil, err
 	}
 
-	return &DB{Messages: mdb}, nil
+	// ATTACH whatsmeow's DB for cross-database queries (archive/pin/mute state)
+	waDBPath := fmt.Sprintf("%s/whatsapp.db", dbDir)
+	if _, err := os.Stat(waDBPath); err == nil {
+		_, _ = mdb.Exec(fmt.Sprintf(`ATTACH DATABASE 'file:%s?mode=ro' AS wadb`, waDBPath))
+	}
+
+	return &DB{Messages: mdb, DBDir: dbDir}, nil
 }
 
 func (d *DB) Close() error {

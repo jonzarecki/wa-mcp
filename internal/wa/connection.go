@@ -23,6 +23,7 @@ func (c *Client) registerHandlers() {
 		case *events.Connected:
 			c.Logger.Info("connected")
 			go c.backfillChatNames()
+			go c.syncAppState()
 		case *events.LoggedOut:
 			c.Logger.Warn("logged out")
 		}
