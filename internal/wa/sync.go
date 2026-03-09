@@ -68,13 +68,28 @@ func (c *Client) handleReceipt(receipt *events.Receipt) {
 // handleMarkChatAsRead syncs whole-chat read/unread state from another device.
 // This event fires both in real-time and via incremental app state sync on reconnect,
 // covering the gap where the server was offline and messages were read on the phone.
+//
+// When a lastMessageTimestamp is present in the action's messageRange, only messages
+// at or before that timestamp are marked read — preserving unread state for newer
+// messages the user hasn't seen yet. This matches WhatsApp's cross-device read cursor.
 func (c *Client) handleMarkChatAsRead(evt *events.MarkChatAsRead) {
 	chatJID := evt.JID.String()
 	if evt.Action.GetRead() {
-		_, _ = c.Store.Messages.Exec(
-			`UPDATE messages SET is_read = 1 WHERE chat_jid = ? AND is_read = 0`,
-			chatJID,
-		)
+		msgRange := evt.Action.GetMessageRange()
+		lastTS := msgRange.GetLastMessageTimestamp()
+		if lastTS > 0 {
+			readUpTo := time.Unix(lastTS, 0)
+			_, _ = c.Store.Messages.Exec(
+				`UPDATE messages SET is_read = 1
+				 WHERE chat_jid = ? AND is_read = 0 AND datetime(timestamp) <= datetime(?)`,
+				chatJID, readUpTo.Format(time.RFC3339),
+			)
+		} else {
+			_, _ = c.Store.Messages.Exec(
+				`UPDATE messages SET is_read = 1 WHERE chat_jid = ? AND is_read = 0`,
+				chatJID,
+			)
+		}
 	} else {
 		_, _ = c.Store.Messages.Exec(
 			`UPDATE messages SET is_read = 0
