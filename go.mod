@@ -6,7 +6,7 @@ require (
 	github.com/mark3labs/mcp-go v0.44.1
 	github.com/mattn/go-sqlite3 v1.14.34
 	github.com/mdp/qrterminal v1.0.1
-	github.com/rs/zerolog v1.34.0
+	github.com/rs/zerolog v1.35.0
 	go.mau.fi/whatsmeow v0.0.0-20260227112304-c9652e4448a2
 )
 
